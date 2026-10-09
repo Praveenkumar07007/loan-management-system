@@ -1,10 +1,9 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import { z } from 'zod';
 import { isDatabaseConnected } from './config/database';
 import { AppError, NotFoundError } from './errors/AppError';
 import { errorResponse } from './utils/apiResponse';
-import { validate } from './middleware/validation';
+import authRoutes from './routes/auth';
 
 const app = express();
 
@@ -20,23 +19,7 @@ app.get('/api/health', (req: Request, res: Response) => {
   });
 });
 
-const testSchema = z.object({
-  name: z.string().min(3),
-  email: z.string().email(),
-  age: z.number().min(0).max(120).optional(),
-});
-
-app.post('/api/test/validation', validate(testSchema), (req: Request, res: Response) => {
-  res.json({ success: true, data: req.body });
-});
-
-app.get('/api/test/not-found', (req: Request, res: Response, next: NextFunction) => {
-  next(new NotFoundError('Test resource not found'));
-});
-
-app.get('/api/test/server-error', (req: Request, res: Response, next: NextFunction) => {
-  next(new Error('Unexpected server error'));
-});
+app.use('/api/auth', authRoutes);
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   next(new NotFoundError(`Route ${req.method} ${req.path} not found`));
