@@ -40,3 +40,21 @@ export class ForbiddenError extends AppError {
     super(403, message);
   }
 }
+
+export class FileValidationError extends AppError {
+  constructor(message: string = 'File validation failed', details?: any) {
+    super(400, message, true, details);
+  }
+}
+
+export class FileSizeError extends AppError {
+  constructor(message: string = 'File size exceeds limit') {
+    super(413, message);
+  }
+}
+
+export class FileTypeError extends AppError {
+  constructor(message: string = 'Invalid file type') {
+    super(415, message);
+  }
+}
