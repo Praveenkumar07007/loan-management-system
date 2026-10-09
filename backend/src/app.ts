@@ -7,6 +7,7 @@ import authRoutes from './routes/auth';
 import protectedRoutes from './routes/protected';
 import eligibilityRoutes from './routes/eligibility';
 import documentRoutes from './routes/documents';
+import loanApplicationRoutes from './routes/loanApplications';
 
 const app = express();
 
@@ -26,6 +27,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/protected', protectedRoutes);
 app.use('/api/eligibility', eligibilityRoutes);
 app.use('/api/documents', documentRoutes);
+app.use('/api/loan-applications', loanApplicationRoutes);
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   next(new NotFoundError(`Route ${req.method} ${req.path} not found`));

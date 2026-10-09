@@ -40,8 +40,9 @@ export interface ILoanApplication extends Document {
   employmentMode: EmploymentMode;
   monthlySalary: number;
   documents: IDocumentMetadata[];
+  documentId?: mongoose.Types.ObjectId; // Reference to uploaded salary slip document
   requestedPrincipal: number;
-  tenure: number;
+  tenureDays: number; // Changed from tenure (months) to tenureDays
   annualInterestRate: number;
   calculatedInterest: number;
   totalRepayment: number;
@@ -155,17 +156,21 @@ const LoanApplicationSchema = new Schema<ILoanApplication>(
         },
       },
     ],
+    documentId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Document',
+    },
     requestedPrincipal: {
       type: Number,
       required: [true, 'Requested principal is required'],
-      min: [1000, 'Requested principal must be at least 1000'],
-      max: [10000000, 'Requested principal cannot exceed 10,000,000'],
+      min: [50000, 'Requested principal must be at least 50,000'],
+      max: [500000, 'Requested principal cannot exceed 500,000'],
     },
-    tenure: {
+    tenureDays: {
       type: Number,
-      required: [true, 'Tenure is required'],
-      min: [1, 'Tenure must be at least 1 month'],
-      max: [360, 'Tenure cannot exceed 360 months (30 years)'],
+      required: [true, 'Tenure days is required'],
+      min: [30, 'Tenure must be at least 30 days'],
+      max: [365, 'Tenure cannot exceed 365 days'],
     },
     annualInterestRate: {
       type: Number,
@@ -243,18 +248,7 @@ const LoanApplicationSchema = new Schema<ILoanApplication>(
 );
 
 LoanApplicationSchema.index({ borrowerId: 1 });
-
-LoanApplicationSchema.pre('save', function (next) {
-  if (this.isNew) {
-    const principal = this.requestedPrincipal;
-    const annualRate = this.annualInterestRate / 100;
-    const tenureInYears = this.tenure / 12;
-
-    this.calculatedInterest = principal * annualRate * tenureInYears;
-    this.totalRepayment = principal + this.calculatedInterest;
-  }
-  next();
-});
+LoanApplicationSchema.index({ documentId: 1 });
 
 const LoanApplication: Model<ILoanApplication> =
   mongoose.models.LoanApplication ||
