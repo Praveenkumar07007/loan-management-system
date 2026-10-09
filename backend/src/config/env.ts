@@ -5,7 +5,7 @@ dotenv.config();
 
 const mongodbUri = process.env.MONGODB_URI;
 
-if (!mongodbUri) {
+if (!mongodbUri && process.env.NODE_ENV !== 'test') {
   throw new Error('MONGODB_URI is not defined in environment variables');
 }
 

@@ -58,3 +58,9 @@ export class FileTypeError extends AppError {
     super(415, message);
   }
 }
+
+export class StatusTransitionError extends AppError {
+  constructor(message: string = 'Invalid status transition') {
+    super(400, message);
+  }
+}

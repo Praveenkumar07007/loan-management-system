@@ -10,6 +10,9 @@ export const connectDatabase = async (): Promise<void> => {
   }
 
   try {
+    if (!config.mongodbUri) {
+      throw new Error('MONGODB_URI is not defined');
+    }
     await mongoose.connect(config.mongodbUri);
     isConnected = true;
     console.log('Database connected successfully');

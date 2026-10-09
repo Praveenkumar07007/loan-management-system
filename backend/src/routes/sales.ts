@@ -99,6 +99,8 @@ router.get(
             totalPages,
             hasNextPage,
             hasPreviousPage,
+            sortBy,
+            sortOrder,
           },
         })
       );
