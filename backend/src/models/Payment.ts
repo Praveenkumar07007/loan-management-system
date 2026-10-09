@@ -63,9 +63,6 @@ const PaymentSchema = new Schema<IPayment>(
 // Index for querying payments by application
 PaymentSchema.index({ applicationId: 1 });
 
-// Compound index for UTR uniqueness is already handled by unique: true
-PaymentSchema.index({ utr: 1 }, { unique: true });
-
 const Payment: Model<IPayment> =
   mongoose.models.Payment || mongoose.model<IPayment>('Payment', PaymentSchema);
 

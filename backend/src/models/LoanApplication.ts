@@ -254,8 +254,6 @@ const LoanApplicationSchema = new Schema<ILoanApplication>(
   }
 );
 
-LoanApplicationSchema.index({ borrowerId: 1 });
-LoanApplicationSchema.index({ documentId: 1 });
 
 const LoanApplication: Model<ILoanApplication> =
   mongoose.models.LoanApplication ||
