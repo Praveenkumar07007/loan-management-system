@@ -650,7 +650,7 @@ describe('Collection API Integration Tests', () => {
       expect(response.body).toMatchObject({
         success: false,
         error: {
-          message: expect.stringContaining('Cannot record payment for loan with status'),
+          message: expect.stringContaining('Loan is already closed'),
         },
       });
     });
@@ -862,6 +862,312 @@ describe('Collection API Integration Tests', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.data.application.amountPaid).toBeGreaterThan(0);
+    });
+  });
+
+  describe('POST /api/collection/loans/:id/payments - Loan Closure Scenarios', () => {
+    it('should handle partial payment without closure', async () => {
+      const response = await request(app)
+        .post(`/api/collection/loans/${applicationIds[3]}/payments`)
+        .set('Authorization', `Bearer ${collectionToken}`)
+        .send({
+          applicationId: applicationIds[3],
+          utr: 'UTRPARTIAL001',
+          amount: 50000, // Partial payment
+          paymentDate: new Date('2024-01-20'),
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.isClosed).toBe(false);
+      expect(response.body.data.application.status).toBe(LoanStatus.Active);
+      expect(response.body.data.outstandingBalance).toBeGreaterThan(0);
+    });
+
+    it('should close loan on exact repayment amount', async () => {
+      // Create a new loan with exact amount for testing
+      const loan = await LoanApplication.create({
+        borrowerId,
+        personalDetails: {
+          fullName: 'Test Borrower',
+          dateOfBirth: new Date('1990-01-01'),
+          phoneNumber: '1234567890',
+          address: '123 Main St',
+          city: 'Mumbai',
+          state: 'Maharashtra',
+          pinCode: '400001',
+        },
+        employmentMode: EmploymentMode.Salaried,
+        monthlySalary: 50000,
+        requestedPrincipal: 100000,
+        tenureDays: 180,
+        annualInterestRate: 12,
+        calculatedInterest: 5917.81,
+        totalRepayment: 105917.81,
+        amountPaid: 0,
+        status: LoanStatus.Disbursed,
+        disbursedBy: disbursementId,
+        disbursedAt: new Date(),
+      });
+
+      const loanId = loan._id.toString();
+
+      // Make exact repayment
+      const response = await request(app)
+        .post(`/api/collection/loans/${loanId}/payments`)
+        .set('Authorization', `Bearer ${collectionToken}`)
+        .send({
+          applicationId: loanId,
+          utr: 'UTREXACT001',
+          amount: 105917.81, // Exact total repayment
+          paymentDate: new Date('2024-01-20'),
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.isClosed).toBe(true);
+      expect(response.body.data.application.status).toBe(LoanStatus.Closed);
+      expect(response.body.data.application.closedAt).toBeDefined();
+      expect(response.body.data.outstandingBalance).toBe(0);
+      expect(response.body.data.message).toContain('Loan has been closed');
+    });
+
+    it('should reject attempted overpayment', async () => {
+      const response = await request(app)
+        .post(`/api/collection/loans/${applicationIds[3]}/payments`)
+        .set('Authorization', `Bearer ${collectionToken}`)
+        .send({
+          applicationId: applicationIds[3],
+          utr: 'UTROVERPAY001',
+          amount: 200000, // Exceeds total repayment
+          paymentDate: new Date('2024-01-20'),
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({
+        success: false,
+        error: {
+          message: expect.stringContaining('exceeds outstanding balance'),
+        },
+      });
+    });
+
+    it('should prevent payments after closure', async () => {
+      // Create and close a loan
+      const loan = await LoanApplication.create({
+        borrowerId,
+        personalDetails: {
+          fullName: 'Test Borrower',
+          dateOfBirth: new Date('1990-01-01'),
+          phoneNumber: '1234567890',
+          address: '123 Main St',
+          city: 'Mumbai',
+          state: 'Maharashtra',
+          pinCode: '400001',
+        },
+        employmentMode: EmploymentMode.Salaried,
+        monthlySalary: 50000,
+        requestedPrincipal: 100000,
+        tenureDays: 180,
+        annualInterestRate: 12,
+        calculatedInterest: 5917.81,
+        totalRepayment: 105917.81,
+        amountPaid: 0,
+        status: LoanStatus.Disbursed,
+        disbursedBy: disbursementId,
+        disbursedAt: new Date(),
+      });
+
+      const loanId = loan._id.toString();
+
+      // Close the loan with exact payment
+      await request(app)
+        .post(`/api/collection/loans/${loanId}/payments`)
+        .set('Authorization', `Bearer ${collectionToken}`)
+        .send({
+          applicationId: loanId,
+          utr: 'UTRCLOSE001',
+          amount: 105917.81,
+          paymentDate: new Date('2024-01-20'),
+        });
+
+      // Attempt to pay after closure
+      const response = await request(app)
+        .post(`/api/collection/loans/${loanId}/payments`)
+        .set('Authorization', `Bearer ${collectionToken}`)
+        .send({
+          applicationId: loanId,
+          utr: 'UTRCLOSE002',
+          amount: 1000,
+          paymentDate: new Date('2024-01-21'),
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({
+        success: false,
+        error: {
+          message: expect.stringContaining('Loan is already closed'),
+        },
+      });
+    });
+
+    it('should handle duplicate payment requests safely', async () => {
+      // First payment request
+      const firstResponse = await request(app)
+        .post(`/api/collection/loans/${applicationIds[3]}/payments`)
+        .set('Authorization', `Bearer ${collectionToken}`)
+        .send({
+          applicationId: applicationIds[3],
+          utr: 'UTRDUP001',
+          amount: 10000,
+          paymentDate: new Date('2024-01-20'),
+        });
+
+      expect(firstResponse.status).toBe(200);
+
+      // Duplicate request with same UTR
+      const secondResponse = await request(app)
+        .post(`/api/collection/loans/${applicationIds[3]}/payments`)
+        .set('Authorization', `Bearer ${collectionToken}`)
+        .send({
+          applicationId: applicationIds[3],
+          utr: 'UTRDUP001',
+          amount: 10000,
+          paymentDate: new Date('2024-01-20'),
+        });
+
+      expect(secondResponse.status).toBe(400);
+      expect(secondResponse.body).toMatchObject({
+        success: false,
+        error: {
+          message: expect.stringContaining('UTR already exists'),
+        },
+      });
+    });
+
+    it('should prevent repeated closure attempts', async () => {
+      // Create and close a loan
+      const loan = await LoanApplication.create({
+        borrowerId,
+        personalDetails: {
+          fullName: 'Test Borrower',
+          dateOfBirth: new Date('1990-01-01'),
+          phoneNumber: '1234567890',
+          address: '123 Main St',
+          city: 'Mumbai',
+          state: 'Maharashtra',
+          pinCode: '400001',
+        },
+        employmentMode: EmploymentMode.Salaried,
+        monthlySalary: 50000,
+        requestedPrincipal: 100000,
+        tenureDays: 180,
+        annualInterestRate: 12,
+        calculatedInterest: 5917.81,
+        totalRepayment: 105917.81,
+        amountPaid: 0,
+        status: LoanStatus.Disbursed,
+        disbursedBy: disbursementId,
+        disbursedAt: new Date(),
+      });
+
+      const loanId = loan._id.toString();
+
+      // Close the loan
+      await request(app)
+        .post(`/api/collection/loans/${loanId}/payments`)
+        .set('Authorization', `Bearer ${collectionToken}`)
+        .send({
+          applicationId: loanId,
+          utr: 'UTRREPEAT001',
+          amount: 105917.81,
+          paymentDate: new Date('2024-01-20'),
+        });
+
+      // Verify loan is closed
+      const closedLoan = await LoanApplication.findById(loanId);
+      expect(closedLoan?.status).toBe(LoanStatus.Closed);
+
+      // Attempt another payment that would try to close again
+      const response = await request(app)
+        .post(`/api/collection/loans/${loanId}/payments`)
+        .set('Authorization', `Bearer ${collectionToken}`)
+        .send({
+          applicationId: loanId,
+          utr: 'UTRREPEAT002',
+          amount: 1000,
+          paymentDate: new Date('2024-01-21'),
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({
+        success: false,
+        error: {
+          message: expect.stringContaining('Loan is already closed'),
+        },
+      });
+
+      // Verify loan remains closed
+      const stillClosedLoan = await LoanApplication.findById(loanId);
+      expect(stillClosedLoan?.status).toBe(LoanStatus.Closed);
+    });
+
+    it('should recalculate balance from persisted records not in-memory field', async () => {
+      // Create a loan
+      const loan = await LoanApplication.create({
+        borrowerId,
+        personalDetails: {
+          fullName: 'Test Borrower',
+          dateOfBirth: new Date('1990-01-01'),
+          phoneNumber: '1234567890',
+          address: '123 Main St',
+          city: 'Mumbai',
+          state: 'Maharashtra',
+          pinCode: '400001',
+        },
+        employmentMode: EmploymentMode.Salaried,
+        monthlySalary: 50000,
+        requestedPrincipal: 100000,
+        tenureDays: 180,
+        annualInterestRate: 12,
+        calculatedInterest: 5917.81,
+        totalRepayment: 105917.81,
+        amountPaid: 0,
+        status: LoanStatus.Disbursed,
+        disbursedBy: disbursementId,
+        disbursedAt: new Date(),
+      });
+
+      const loanId = loan._id.toString();
+
+      // Make first payment
+      await request(app)
+        .post(`/api/collection/loans/${loanId}/payments`)
+        .set('Authorization', `Bearer ${collectionToken}`)
+        .send({
+          applicationId: loanId,
+          utr: 'UTRCALC001',
+          amount: 50000,
+          paymentDate: new Date('2024-01-20'),
+        });
+
+      // Make second payment
+      const response = await request(app)
+        .post(`/api/collection/loans/${loanId}/payments`)
+        .set('Authorization', `Bearer ${collectionToken}`)
+        .send({
+          applicationId: loanId,
+          utr: 'UTRCALC002',
+          amount: 55917.81, // Remaining balance
+          paymentDate: new Date('2024-01-21'),
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.isClosed).toBe(true);
+      expect(response.body.data.outstandingBalance).toBe(0);
+
+      // Verify payment records sum to total
+      const payments = await Payment.find({ applicationId: loanId });
+      const totalFromRecords = payments.reduce((sum, p) => sum + p.amount, 0);
+      expect(totalFromRecords).toBe(105917.81);
     });
   });
 

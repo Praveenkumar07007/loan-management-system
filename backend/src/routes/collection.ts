@@ -100,9 +100,12 @@ router.get(
  * - Role authorization: Collection and Admin only
  * - Requires unique UTR (enforced by database index)
  * - Validates payment amount and date
+ * - Recalculates balance from persisted payment records (not in-memory field)
  * - Ensures payment doesn't exceed outstanding balance
  * - Only allows payments against Disbursed or Active loans
- * - Uses atomic update to prevent race conditions
+ * - Prevents payments on Closed loans
+ * - Automatically closes loan when fully paid
+ * - Uses atomic transactions to prevent race conditions
  */
 router.post(
   '/loans/:id/payments',
@@ -115,36 +118,45 @@ router.post(
       const { utr, amount, paymentDate } = req.body;
       const collectionId = req.userId!;
 
-      // Get the loan application
-      const application = await LoanApplication.findById(applicationId);
-
-      if (!application) {
-        throw new NotFoundError('Loan application not found');
-      }
-
-      // Check if loan is in eligible state for payment
-      const eligibleStatuses = [LoanStatus.Disbursed, LoanStatus.Active];
-      if (!eligibleStatuses.includes(application.status)) {
-        throw new StatusTransitionError(
-          `Cannot record payment for loan with status '${application.status}'. Only Disbursed and Active loans can accept payments.`
-        );
-      }
-
-      // Calculate outstanding balance
-      const outstandingBalance = application.totalRepayment - application.amountPaid;
-
-      // Check if payment exceeds outstanding balance
-      if (amount > outstandingBalance) {
-        throw new ValidationError(
-          `Payment amount (₹${amount.toFixed(2)}) exceeds outstanding balance (₹${outstandingBalance.toFixed(2)})`
-        );
-      }
-
       // Start a session for transaction
       const session = await LoanApplication.startSession();
 
       try {
-        await session.withTransaction(async () => {
+        const result = await session.withTransaction(async () => {
+          // Get the loan application within transaction
+          const application = await LoanApplication.findById(applicationId).session(session);
+
+          if (!application) {
+            throw new NotFoundError('Loan application not found');
+          }
+
+          // Check if loan is in eligible state for payment
+          const eligibleStatuses = [LoanStatus.Disbursed, LoanStatus.Active];
+          if (!eligibleStatuses.includes(application.status)) {
+            if (application.status === LoanStatus.Closed) {
+              throw new StatusTransitionError(
+                `Cannot record payment for loan with status '${application.status}'. Loan is already closed.`
+              );
+            }
+            throw new StatusTransitionError(
+              `Cannot record payment for loan with status '${application.status}'. Only Disbursed and Active loans can accept payments.`
+            );
+          }
+
+          // Recalculate total paid from persisted payment records
+          const payments = await Payment.find({ applicationId }).session(session);
+          const totalPaidFromRecords = payments.reduce((sum, p) => sum + p.amount, 0);
+
+          // Calculate outstanding balance from persisted records
+          const outstandingBalance = application.totalRepayment - totalPaidFromRecords;
+
+          // Check if payment exceeds outstanding balance
+          if (amount > outstandingBalance) {
+            throw new ValidationError(
+              `Payment amount (₹${amount.toFixed(2)}) exceeds outstanding balance (₹${outstandingBalance.toFixed(2)}). Total repayment is ₹${application.totalRepayment.toFixed(2)}.`
+            );
+          }
+
           // Create payment record
           const payment = await Payment.create(
             [
@@ -159,15 +171,34 @@ router.post(
             { session }
           );
 
-          // Atomically update loan's amountPaid
+          // Recalculate total paid after new payment
+          const newTotalPaid = totalPaidFromRecords + amount;
+
+          // Determine if loan should be closed
+          const shouldClose = newTotalPaid >= application.totalRepayment;
+
+          // Prepare update document
+          const updateDoc: any = {
+            $inc: { amountPaid: amount },
+          };
+
+          // Update status based on payment and closure
+          if (application.status === LoanStatus.Disbursed) {
+            updateDoc.$set = { status: LoanStatus.Active };
+          }
+
+          if (shouldClose) {
+            updateDoc.$set = {
+              ...updateDoc.$set,
+              status: LoanStatus.Closed,
+              closedAt: new Date(),
+            };
+          }
+
+          // Atomically update loan
           const updatedApplication = await LoanApplication.findByIdAndUpdate(
             applicationId,
-            {
-              $inc: { amountPaid: amount },
-              $set: {
-                status: LoanStatus.Active, // Move to Active if first payment
-              },
-            },
+            updateDoc,
             { new: true, session }
           );
 
@@ -175,21 +206,13 @@ router.post(
             throw new Error('Failed to update loan application');
           }
 
-          // Check if loan is fully paid
-          if (updatedApplication.amountPaid >= updatedApplication.totalRepayment) {
-            await LoanApplication.findByIdAndUpdate(
-              applicationId,
-              {
-                $set: {
-                  status: LoanStatus.Closed,
-                  closedAt: new Date(),
-                },
-              },
-              { session }
-            );
-          }
-
-          return payment[0];
+          return {
+            payment: payment[0],
+            application: updatedApplication,
+            totalPaid: newTotalPaid,
+            outstandingBalance: application.totalRepayment - newTotalPaid,
+            isClosed: shouldClose,
+          };
         });
 
         // Fetch updated application with populated fields
@@ -197,19 +220,19 @@ router.post(
           .populate('borrowerId', 'fullName email')
           .populate('disbursedBy', 'fullName');
 
-        // Calculate new outstanding balance
-        const newOutstandingBalance = updatedApplication!.totalRepayment - updatedApplication!.amountPaid;
-
         res.json(
           successResponse({
             payment: {
-              utr: utr.toUpperCase(),
-              amount,
-              paymentDate,
+              utr: result.payment.utr,
+              amount: result.payment.amount,
+              paymentDate: result.payment.paymentDate,
             },
             application: updatedApplication,
-            outstandingBalance: newOutstandingBalance,
-            message: 'Payment recorded successfully',
+            outstandingBalance: result.outstandingBalance,
+            isClosed: result.isClosed,
+            message: result.isClosed 
+              ? 'Payment recorded successfully. Loan has been closed.' 
+              : 'Payment recorded successfully',
           })
         );
       } catch (error) {
