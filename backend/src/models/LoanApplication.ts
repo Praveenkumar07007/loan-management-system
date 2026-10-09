@@ -46,6 +46,7 @@ export interface ILoanApplication extends Document {
   annualInterestRate: number;
   calculatedInterest: number;
   totalRepayment: number;
+  amountPaid: number; // Track total amount paid so far
   status: LoanStatus;
   rejectionReason?: string;
   reviewedBy?: mongoose.Types.ObjectId;
@@ -189,6 +190,12 @@ const LoanApplicationSchema = new Schema<ILoanApplication>(
       required: true,
       min: [0, 'Total repayment cannot be negative'],
       immutable: true,
+    },
+    amountPaid: {
+      type: Number,
+      required: true,
+      default: 0,
+      min: [0, 'Amount paid cannot be negative'],
     },
     status: {
       type: String,

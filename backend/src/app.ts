@@ -11,6 +11,7 @@ import loanApplicationRoutes from './routes/loanApplications';
 import salesRoutes from './routes/sales';
 import sanctionRoutes from './routes/sanction';
 import disbursementRoutes from './routes/disbursement';
+import collectionRoutes from './routes/collection';
 
 const app = express();
 
@@ -34,6 +35,7 @@ app.use('/api/loan-applications', loanApplicationRoutes);
 app.use('/api/sales', salesRoutes);
 app.use('/api/sanction', sanctionRoutes);
 app.use('/api/disbursement', disbursementRoutes);
+app.use('/api/collection', collectionRoutes);
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   next(new NotFoundError(`Route ${req.method} ${req.path} not found`));
