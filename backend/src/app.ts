@@ -1,5 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import { isDatabaseConnected } from './config/database';
 
 const app = express();
 
@@ -7,7 +8,12 @@ app.use(cors());
 app.use(express.json());
 
 app.get('/api/health', (req: Request, res: Response) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  const dbConnected = isDatabaseConnected();
+  res.json({
+    status: dbConnected ? 'ok' : 'degraded',
+    database: dbConnected ? 'connected' : 'disconnected',
+    timestamp: new Date().toISOString(),
+  });
 });
 
 app.use((req: Request, res: Response) => {
