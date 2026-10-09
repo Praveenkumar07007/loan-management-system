@@ -61,8 +61,6 @@ const UserSchema = new Schema<IUser>(
   }
 );
 
-UserSchema.index({ email: 1 });
-
 UserSchema.pre('save', async function (next) {
   if (!this.isModified('password')) {
     return next();

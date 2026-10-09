@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
-import { UnauthorizedError } from '../errors/AppError';
+import { UnauthorizedError, ForbiddenError } from '../errors/AppError';
 import { verifyToken } from '../services/authService';
+import { UserRole } from '../models/User';
 
 declare global {
   namespace Express {
@@ -29,3 +30,24 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
     next(error);
   }
 };
+
+export const authorize = (...allowedRoles: UserRole[]) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.userId || !req.userRole) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    const userRole = req.userRole as UserRole;
+
+    if (userRole === UserRole.Admin) {
+      return next();
+    }
+
+    if (!allowedRoles.includes(userRole)) {
+      throw new ForbiddenError('Insufficient permissions');
+    }
+
+    next();
+  };
+};
+

@@ -4,6 +4,7 @@ import { isDatabaseConnected } from './config/database';
 import { AppError, NotFoundError } from './errors/AppError';
 import { errorResponse } from './utils/apiResponse';
 import authRoutes from './routes/auth';
+import protectedRoutes from './routes/protected';
 
 const app = express();
 
@@ -20,6 +21,7 @@ app.get('/api/health', (req: Request, res: Response) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/protected', protectedRoutes);
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   next(new NotFoundError(`Route ${req.method} ${req.path} not found`));
