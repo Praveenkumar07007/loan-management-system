@@ -2,7 +2,11 @@
 
 A full-stack Loan Management System built with Next.js, Express.js, TypeScript, MongoDB, and NextAuth for Google OAuth authentication.
 
-### uploaded Demo video: https://youtu.be/d1jaA67rFB4
+### Demo Video
+
+[![LMS Demo](https://img.youtube.com/vi/d1jaA67rFB4/0.jpg)](https://www.youtube.com/watch?v=d1jaA67rFB4)
+
+https://www.youtube.com/watch?v=d1jaA67rFB4
 
 ## Installation
 
