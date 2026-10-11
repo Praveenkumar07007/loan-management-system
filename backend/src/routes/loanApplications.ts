@@ -178,4 +178,61 @@ router.get(
   }
 );
 
+/**
+ * GET /api/loan-applications/statistics
+ * Get statistics for the authenticated borrower
+ */
+router.get(
+  '/statistics',
+  authenticate,
+  authorize(UserRole.Borrower),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const borrowerId = req.userId!;
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      const [
+        totalApplications,
+        pendingApplications,
+        approvedApplications,
+        rejectedApplications,
+        disbursedApplications,
+        totalBorrowed,
+        nextEmiAmount,
+      ] = await Promise.all([
+        LoanApplication.countDocuments({ borrowerId }),
+        LoanApplication.countDocuments({ borrowerId, status: LoanStatus.Pending }),
+        LoanApplication.countDocuments({ borrowerId, status: LoanStatus.Approved }),
+        LoanApplication.countDocuments({ borrowerId, status: LoanStatus.Rejected }),
+        LoanApplication.countDocuments({ borrowerId, status: LoanStatus.Disbursed }),
+        LoanApplication.aggregate([
+          { $match: { borrowerId, status: LoanStatus.Disbursed } },
+          { $group: { _id: null, total: { $sum: '$requestedPrincipal' } } },
+        ]),
+        LoanApplication.findOne({
+          borrowerId,
+          status: LoanStatus.Disbursed,
+        }).sort({ disbursedAt: -1 }),
+      ]);
+
+      const borrowedAmount = totalBorrowed[0]?.total || 0;
+
+      res.json(
+        successResponse({
+          totalApplications,
+          pendingApplications,
+          approvedApplications,
+          rejectedApplications,
+          disbursedApplications,
+          totalBorrowed: borrowedAmount,
+          nextEmiAmount: nextEmiAmount ? nextEmiAmount.totalRepayment / (nextEmiAmount.tenureDays / 30) : 0,
+        })
+      );
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 export default router;

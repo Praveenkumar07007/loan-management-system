@@ -15,6 +15,7 @@ export interface IUser extends Document {
   email: string;
   password: string;
   role: UserRole;
+  googleId?: string;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -45,6 +46,11 @@ const UserSchema = new Schema<IUser>(
       required: [true, 'Password is required'],
       minlength: [8, 'Password must be at least 8 characters'],
       select: false,
+    },
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true,
     },
     role: {
       type: String,

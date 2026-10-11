@@ -4,6 +4,10 @@ const nextConfig: NextConfig = {
   /* config options here */
   cacheComponents: true,
   partialPrefetching: true,
+  images: {
+    remotePatterns: [],
+    unoptimized: true,
+  },
   turbopack: {
     rules: {
       "*.css": {

@@ -17,7 +17,6 @@ export const activeLoansQuerySchema = z.object({
 });
 
 export const recordPaymentSchema = z.object({
-  applicationId: z.string().min(1, 'Application ID is required'),
   utr: z.string({
     required_error: 'UTR is required',
   }).min(12, 'UTR must be at least 12 characters')

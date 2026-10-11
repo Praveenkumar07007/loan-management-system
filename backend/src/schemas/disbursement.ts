@@ -9,7 +9,7 @@ export const approvedLoansQuerySchema = z.object({
   search: z.string().optional(),
 
   // Filters
-  status: z.enum(['Approved']).optional(),
+  status: z.enum(['Approved', 'Disbursed', 'Active']).optional(),
 
   // Sorting
   sortBy: z.enum(['createdAt', 'requestedPrincipal', 'totalRepayment', 'approvedAt']).default('approvedAt'),

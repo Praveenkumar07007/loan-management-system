@@ -59,6 +59,7 @@ router.get(
       // Execute query with pagination and sorting
       const [applications, total] = await Promise.all([
         LoanApplication.find(baseQuery)
+          .select('_id borrowerId personalDetails employmentMode monthlySalary requestedPrincipal tenureDays annualInterestRate calculatedInterest totalRepayment amountPaid status createdAt disbursedAt')
           .populate('borrowerId', 'fullName email')
           .populate('disbursedBy', 'fullName')
           .sort({ [sortBy]: sortOrder === 'asc' ? 1 : -1 })
@@ -291,7 +292,14 @@ router.get(
   authorize(UserRole.Collection, UserRole.Admin),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const application = await LoanApplication.findById(req.params.id)
+      const loanId = req.params.id;
+
+      // Check if loanId is valid
+      if (!loanId || loanId === 'undefined' || loanId === 'null') {
+        throw new NotFoundError('Invalid loan ID');
+      }
+
+      const application = await LoanApplication.findById(loanId)
         .populate('borrowerId', 'fullName email')
         .populate('disbursedBy', 'fullName');
 
@@ -312,6 +320,80 @@ router.get(
           application,
           payments,
           outstandingBalance,
+        })
+      );
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/collection/statistics
+ * Get collection dashboard statistics
+ * - Role authorization: Collection and Admin only
+ */
+router.get(
+  '/statistics',
+  authenticate,
+  authorize(UserRole.Collection, UserRole.Admin),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+      const [
+        activeLoans,
+        overdueLoans,
+        collectedThisMonth,
+        totalCollected,
+        upcomingEMI,
+      ] = await Promise.all([
+        LoanApplication.countDocuments({
+          status: { $in: [LoanStatus.Disbursed, LoanStatus.Active] },
+        }),
+        LoanApplication.countDocuments({
+          status: LoanStatus.Defaulted,
+        }),
+        Payment.aggregate([
+          {
+            $match: {
+              paymentDate: { $gte: startOfMonth },
+            },
+          },
+          { $group: { _id: null, total: { $sum: '$amount' } } },
+        ]),
+        Payment.aggregate([
+          { $group: { _id: null, total: { $sum: '$amount' } } },
+        ]),
+        LoanApplication.countDocuments({
+          status: { $in: [LoanStatus.Disbursed, LoanStatus.Active] },
+          disbursedAt: { $gte: now, $lte: nextWeek },
+        }),
+      ]);
+
+      const collectedAmount = collectedThisMonth[0]?.total || 0;
+      const totalCollectedAmount = totalCollected[0]?.total || 0;
+
+      // Calculate collection rate (total collected / total expected)
+      const totalExpected = await LoanApplication.aggregate([
+        { $match: { status: { $in: [LoanStatus.Disbursed, LoanStatus.Active, LoanStatus.Closed] } } },
+        { $group: { _id: null, total: { $sum: '$totalRepayment' } } },
+      ]);
+      const totalExpectedAmount = totalExpected[0]?.total || 0;
+      const collectionRate = totalExpectedAmount > 0
+        ? ((totalCollectedAmount / totalExpectedAmount) * 100).toFixed(1)
+        : '0';
+
+      res.json(
+        successResponse({
+          activeLoans,
+          overdueLoans,
+          collectedThisMonth: collectedAmount,
+          totalCollected: totalCollectedAmount,
+          collectionRate: `${collectionRate}%`,
+          upcomingEMI,
         })
       );
     } catch (error) {

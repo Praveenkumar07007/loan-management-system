@@ -64,6 +64,41 @@ export const login = async (data: LoginInput) => {
   };
 };
 
+export const googleAuth = async (data: { email: string; name: string; googleId: string }) => {
+  const { email, name, googleId } = data;
+
+  let user = await User.findOne({ email });
+
+  if (user) {
+    // User exists, update googleId if not set
+    if (!user.googleId) {
+      user.googleId = googleId;
+      await user.save();
+    }
+  } else {
+    // Create new user
+    user = await User.create({
+      fullName: name,
+      email,
+      googleId,
+      role: UserRole.Borrower,
+      password: Math.random().toString(36).slice(-8), // Random password for Google users
+    });
+  }
+
+  const token = generateToken(user._id.toString(), user.role);
+
+  return {
+    user: {
+      id: user._id,
+      fullName: user.fullName,
+      email: user.email,
+      role: user.role,
+    },
+    token,
+  };
+};
+
 const generateToken = (userId: string, role: UserRole): string => {
   return jwt.sign(
     { userId, role },

@@ -11,7 +11,7 @@ const router = Router();
 
 /**
  * GET /api/sales/borrowers
- * List registered borrowers who have not applied for a loan
+ * List registered borrowers (with and without loan applications)
  * - Role authorization: Sales only
  * - Search by name or email
  * - Filter by registration date range
@@ -63,26 +63,29 @@ router.get(
         }
       }
 
-      // Get IDs of borrowers who have applied for a loan
-      const borrowersWithApplications = await LoanApplication.distinct('borrowerId', {
-        status: { $in: [LoanStatus.Pending, LoanStatus.UnderReview, LoanStatus.Approved, LoanStatus.Disbursed, LoanStatus.Active] },
-      });
-
-      // Exclude borrowers who have applied
-      if (borrowersWithApplications.length > 0) {
-        baseQuery._id = { $nin: borrowersWithApplications };
-      }
-
       // Execute query with pagination and sorting
       const [borrowers, total] = await Promise.all([
         User.find(baseQuery)
-          .select('fullName email role createdAt') // Only return fields Sales needs
+          .select('fullName email role createdAt phoneNumber address city state pinCode')
           .sort({ [sortBy]: sortOrder === 'asc' ? 1 : -1 })
           .skip(skip)
           .limit(limitNum)
           .lean(),
         User.countDocuments(baseQuery),
       ]);
+
+      // Add application count to each borrower
+      const borrowersWithApplicationCount = await Promise.all(
+        borrowers.map(async (borrower: any) => {
+          const applicationCount = await LoanApplication.countDocuments({
+            borrowerId: borrower._id,
+          });
+          return {
+            ...borrower,
+            applicationCount,
+          };
+        })
+      );
 
       // Calculate pagination metadata
       const totalPages = Math.ceil(total / limitNum);
@@ -91,7 +94,7 @@ router.get(
 
       res.json(
         successResponse({
-          borrowers,
+          borrowers: borrowersWithApplicationCount,
           pagination: {
             page,
             limit,
@@ -102,6 +105,58 @@ router.get(
             sortBy,
             sortOrder,
           },
+        })
+      );
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/sales/statistics
+ * Get sales dashboard statistics
+ * - Role authorization: Sales only
+ */
+router.get(
+  '/statistics',
+  authenticate,
+  authorize(UserRole.Sales),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      const [
+        totalApplications,
+        pendingApplications,
+        approvedThisMonth,
+        approvedTotal,
+        rejectedThisMonth,
+        rejectedTotal,
+      ] = await Promise.all([
+        LoanApplication.countDocuments({}),
+        LoanApplication.countDocuments({ status: LoanStatus.Pending }),
+        LoanApplication.countDocuments({
+          status: LoanStatus.Approved,
+          approvedAt: { $gte: startOfMonth },
+        }),
+        LoanApplication.countDocuments({ status: LoanStatus.Approved }),
+        LoanApplication.countDocuments({
+          status: LoanStatus.Rejected,
+          reviewedAt: { $gte: startOfMonth },
+        }),
+        LoanApplication.countDocuments({ status: LoanStatus.Rejected }),
+      ]);
+
+      res.json(
+        successResponse({
+          totalApplications,
+          pendingApplications,
+          approvedThisMonth,
+          approvedTotal,
+          rejectedThisMonth,
+          rejectedTotal,
         })
       );
     } catch (error) {
@@ -123,7 +178,7 @@ router.get(
       const borrower = await User.findOne({
         _id: req.params.id,
         role: UserRole.Borrower,
-      }).select('fullName email role createdAt');
+      }).select('fullName email role createdAt phoneNumber address city state pinCode');
 
       if (!borrower) {
         return res.status(404).json({
@@ -135,7 +190,55 @@ router.get(
         });
       }
 
-      res.json(successResponse({ borrower }));
+      // Get borrower's loan applications
+      const loanApplications = await LoanApplication.find({
+        borrowerId: req.params.id,
+      })
+        .select('status requestedPrincipal tenureDays annualInterestRate createdAt personalDetails')
+        .sort({ createdAt: -1 })
+        .lean();
+
+      res.json(successResponse({ borrower, loanApplications }));
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/sales/recent-activity
+ * Get recent sales activities
+ * - Role authorization: Sales only
+ */
+router.get(
+  '/recent-activity',
+  authenticate,
+  authorize(UserRole.Sales),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const now = new Date();
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+      const recentApplications = await LoanApplication.find({
+        createdAt: { $gte: sevenDaysAgo },
+      })
+        .populate('borrowerId', 'fullName email')
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .lean();
+
+      const activities = recentApplications.map((app: any) => {
+        const hoursAgo = Math.floor((now.getTime() - new Date(app.createdAt).getTime()) / (1000 * 60 * 60));
+        const timeAgo = hoursAgo < 1 ? 'Just now' : hoursAgo === 1 ? '1 hour ago' : `${hoursAgo} hours ago`;
+
+        return {
+          icon: 'primary',
+          text: `New application from ${app.borrowerId?.fullName || 'Unknown'} for ₹${app.requestedPrincipal?.toLocaleString('en-IN') || '0'}`,
+          time: timeAgo,
+        };
+      });
+
+      res.json(successResponse({ activities }));
     } catch (error) {
       next(error);
     }

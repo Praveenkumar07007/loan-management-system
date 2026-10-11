@@ -9,7 +9,8 @@ export const pendingApplicationsQuerySchema = z.object({
   search: z.string().optional(),
 
   // Filters
-  status: z.enum(['Pending', 'UnderReview']).optional(),
+  status: z.enum(['Pending', 'UnderReview', 'Approved']).optional(),
+  mySanctions: z.coerce.boolean().optional(),
 
   // Sorting
   sortBy: z.enum(['createdAt', 'requestedPrincipal', 'totalRepayment']).default('createdAt'),
@@ -17,11 +18,12 @@ export const pendingApplicationsQuerySchema = z.object({
 });
 
 export const approveApplicationSchema = z.object({
-  applicationId: z.string().min(1, 'Application ID is required'),
+  approvalReason: z.string().min(10, 'Approval reason must be at least 10 characters')
+    .max(500, 'Approval reason cannot exceed 500 characters')
+    .optional(),
 });
 
 export const rejectApplicationSchema = z.object({
-  applicationId: z.string().min(1, 'Application ID is required'),
   rejectionReason: z.string({
     required_error: 'Rejection reason is required',
   }).min(10, 'Rejection reason must be at least 10 characters')

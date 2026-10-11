@@ -49,6 +49,7 @@ export interface ILoanApplication extends Document {
   amountPaid: number; // Track total amount paid so far
   status: LoanStatus;
   rejectionReason?: string;
+  approvalReason?: string;
   reviewedBy?: mongoose.Types.ObjectId;
   approvedBy?: mongoose.Types.ObjectId;
   disbursedBy?: mongoose.Types.ObjectId;
@@ -216,6 +217,11 @@ const LoanApplicationSchema = new Schema<ILoanApplication>(
         },
         message: 'Rejection reason is required when status is Rejected',
       },
+    },
+    approvalReason: {
+      type: String,
+      trim: true,
+      maxlength: [500, 'Approval reason cannot exceed 500 characters'],
     },
     reviewedBy: {
       type: Schema.Types.ObjectId,

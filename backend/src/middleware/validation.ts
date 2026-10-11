@@ -13,7 +13,8 @@ export const validate = (schema: ZodSchema, property: 'body' | 'query' | 'params
           field: err.path.join('.'),
           message: err.message,
         }));
-        throw new ValidationError('Validation failed', details);
+        const errorMessage = details.map(d => `${d.field}: ${d.message}`).join(', ');
+        throw new ValidationError(errorMessage, details);
       }
       next(error);
     }

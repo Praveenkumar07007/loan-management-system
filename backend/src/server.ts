@@ -7,23 +7,19 @@ const startServer = async (): Promise<void> => {
     await connectDatabase();
 
     const server = app.listen(config.port, () => {
-      console.log(`Server running on port ${config.port} in ${config.nodeEnv} mode`);
+      // Server started successfully
     });
 
     process.on('SIGTERM', async () => {
-      console.log('SIGTERM received, shutting down gracefully');
       server.close(async () => {
         await disconnectDatabase();
-        console.log('Server closed');
         process.exit(0);
       });
     });
 
     process.on('SIGINT', async () => {
-      console.log('SIGINT received, shutting down gracefully');
       server.close(async () => {
         await disconnectDatabase();
-        console.log('Server closed');
         process.exit(0);
       });
     });

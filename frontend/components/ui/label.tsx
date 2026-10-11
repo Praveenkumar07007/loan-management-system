@@ -1,12 +1,11 @@
-import { Label as LabelPrimitive } from "@base-ui/react/label"
 import { cn } from "cn"
 
-function Label({ className, ...props }: LabelPrimitive.Props) {
+function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) {
   return (
-    <LabelPrimitive
+    <label
       data-slot="label"
       className={cn(
-        "text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
+        "text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-foreground",
         className
       )}
       {...props}
